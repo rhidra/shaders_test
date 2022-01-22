@@ -1,0 +1,92 @@
+<!DOCTYPE html><html><head><title>Shaders tests</title></head><body>
+<div id="container"></div>
+
+<script src="node_modules/three/build/three.min.js"></script>
+
+<script id="vertexShader" type="x-shader/x-vertex">
+  void main() {
+    gl_Position = vec4( position, 1.0 );
+  }
+</script>
+
+<script>
+    const FRAME_PERIOD = 1000 / 30; // 30 FPS
+
+    let container;
+    let camera, scene, renderer;
+    let uniforms;
+    let fragmentShader;
+    let lastTime = -FRAME_PERIOD;
+
+
+    fetch('/ray_marching3.frag')
+    .then(data => data.text())
+    .then(text => {
+      fragmentShader = text;
+      init();
+      animate(0);
+    });
+
+
+    function init() {
+        container = document.getElementById( 'container' );
+
+        camera = new THREE.Camera();
+        camera.position.z = 1;
+
+        scene = new THREE.Scene();
+
+        let geometry = new THREE.PlaneBufferGeometry( 2, 2 );
+
+        uniforms = {
+            u_time: { type: "f", value: 1.0 },
+            u_resolution: { type: "v2", value: new THREE.Vector2() },
+            u_mouse: { type: "v2", value: new THREE.Vector2() },
+            u_texture: { type: "t", value: THREE.ImageUtils.loadTexture("lena.jpg")}
+        };
+
+        let material = new THREE.ShaderMaterial( {
+            uniforms,
+            vertexShader: document.getElementById('vertexShader').textContent,
+            fragmentShader,
+        } );
+
+        let mesh = new THREE.Mesh( geometry, material );
+        scene.add( mesh );
+
+        renderer = new THREE.WebGLRenderer();
+        renderer.setPixelRatio( window.devicePixelRatio );
+
+        container.appendChild( renderer.domElement );
+
+        onWindowResize();
+        window.addEventListener( 'resize', onWindowResize, false );
+
+        document.onmousemove = function(e){
+          uniforms.u_mouse.value.x = e.pageX
+          uniforms.u_mouse.value.y = e.pageY
+        }
+    }
+
+    function onWindowResize( event ) {
+        renderer.setSize( window.innerWidth, window.innerHeight );
+        uniforms.u_resolution.value.x = renderer.domElement.width;
+        uniforms.u_resolution.value.y = renderer.domElement.height;
+    }
+
+    function animate(time) {
+        requestAnimationFrame(animate);
+        if ((time - lastTime) < FRAME_PERIOD) {
+            return;
+        }
+
+        lastTime = time;
+        render(time);
+    }
+
+    function render(time) {
+        uniforms.u_time.value = time / 1000;
+        renderer.render(scene, camera);
+    }
+</script>
+</body>

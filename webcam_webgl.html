@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Webcam Stream tests</title>
+ 
+<style>
+#container {
+  display: flex;
+  justify-content: space-around;
+  min-height: 100vh;
+  padding-top: 5rem;
+}
+video {
+	width: 500px;
+	height: 375px;
+}
+canvas {
+	width: 500px;
+	height: 375px;
+}
+</style>
+</head>
+ 
+<body>
+<div id="container">
+  <video autoplay="true" id="videoElement"></video>
+  
+  <canvas id="mycanvas" width="500" height="375"></canvas>
+</div>
+<script id="vertex-shader-2d" type="notjs">
+  attribute vec2 a_position;
+  attribute vec2 a_texCoord;
+  uniform vec2 u_resolution;
+  varying vec2 v_texCoord;
+
+  void main() {
+    vec2 zeroToOne = a_position / u_resolution;
+    vec2 zeroToTwo = zeroToOne * 2.0;
+    vec2 clipSpace = zeroToTwo - 1.0;
+    gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+    v_texCoord = a_texCoord;
+  }
+</script>
+<script id="fragment-shader-2d" type="x-shader/x-fragment">
+  precision mediump float;
+  uniform sampler2D u_texture;
+  varying vec2 v_texCoord;
+  
+  void main() {
+    vec3 color = texture2D(u_texture, v_texCoord).rgb;
+    
+    color = vec3(color.b);
+
+    gl_FragColor = vec4(color, 1.);
+  }
+</script>
+<script src="/utils.js"></script>
+
+<script>
+  const video = document.querySelector("#videoElement");
+  const canvas = document.querySelector("#mycanvas");
+  const gl = canvas.getContext("webgl");
+  const vertexShaderSource = document.querySelector("#vertex-shader-2d").text;
+  let fragmentShaderSource = document.querySelector("#fragment-shader-2d").text;
+
+  // fetch('/pixel.frag')
+  //   .then(data => data.text())
+  //   .then(text => {
+  //     fragmentShaderSource = text;
+  //     init();
+  //   });
+
+  init();
+
+  function init() {
+    const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+    const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+    const program = createProgram(gl, vertexShader, fragmentShader);
+
+    const positionLocation = gl.getAttribLocation(program, "a_position");
+    const texcoordLocation = gl.getAttribLocation(program, "a_texCoord");
+
+    const positionBuffer = gl.createBuffer();
+
+    // Bind it to ARRAY_BUFFER (think of it as ARRAY_BUFFER = positionBuffer)
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    // Set a rectangle the same size as the image.
+    setRectangle(gl, 0, 0, 500, 375);
+
+    // provide texture coordinates for the rectangle.
+    let texcoordBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+        0.0,  0.0,
+        1.0,  0.0,
+        0.0,  1.0,
+        0.0,  1.0,
+        1.0,  0.0,
+        1.0,  1.0,
+    ]), gl.STATIC_DRAW);
+
+    // Create a texture.
+    let texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+
+    // Set the parameters so we can render any size image.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+    // lookup uniforms
+    let resolutionLocation = gl.getUniformLocation(program, "u_resolution");
+
+    function computeFrame() {
+      if (!video || video.paused) { return; }
+      gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+      
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.useProgram(program);
+      
+      gl.enableVertexAttribArray(positionLocation);
+      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+      gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+      
+      gl.enableVertexAttribArray(texcoordLocation);
+      gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
+      gl.vertexAttribPointer(texcoordLocation, 2, gl.FLOAT, false, 0, 0);
+      
+      gl.uniform2f(resolutionLocation, gl.canvas.width, gl.canvas.height);
+      
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+
+    if (navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then(stream => {
+          video.srcObject = stream;
+          setInterval(() => computeFrame(), 16);
+        })
+        .catch((e) => {
+          console.error("Something went wrong!");
+          console.error(e);
+        });
+    }
+  }
+</script>
+</body>
+</html>

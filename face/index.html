@@ -1,0 +1,148 @@
+<!DOCTYPE html><html><head>
+  <title>Shaders tests</title>
+  <style>
+    #container {
+      position: relative;
+      min-height: 100vh;
+    }
+    video {
+      width: 500px;
+      height: 375px;
+    }
+    #canvasElement {
+      position: absolute;
+      top: 0; left: 0;
+      width: 500px;
+      height: 375px;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <video autoplay="true" id="videoElement"></video>
+    <div id="canvasElement" width="500" height="375"></div>
+  </div>
+  
+  <script id="vertexShader" type="x-shader/x-vertex">
+    void main() { gl_Position = vec4( position, 1.0 ); }
+  </script>
+
+  <script src="faceapi.js"></script>
+  <script src="/node_modules/three/build/three.min.js"></script>
+
+  <script>
+    const FRAME_PERIOD = 1000 / 30; // 30 FPS
+    
+    const video = document.getElementById('videoElement');
+    const container = document.getElementById('canvasElement');
+    let landmarks = [];
+
+    let camera, scene, renderer;
+    let uniforms;
+    let fragmentShader;
+    let lastTime = - FRAME_PERIOD;
+    
+    if (!navigator.mediaDevices.getUserMedia) {
+      throw Error('Cannot access webcam !');
+    }
+
+    fetch('/face/shaders/eyes.frag')
+    .then(data => data.text())
+    .then(text => fragmentShader = text)
+    .then(() => navigator.mediaDevices.getUserMedia({ video: true }))
+    .then(stream => video.srcObject = stream)
+
+    .then(() => faceapi.nets.tinyFaceDetector.loadFromUri('/face/models'))
+    .then(() => faceapi.nets.faceLandmark68Net.loadFromUri('/face/models'))
+    .then(() => faceapi.nets.faceRecognitionNet.loadFromUri('/face/models'))
+    .then(() => faceapi.nets.faceExpressionNet.loadFromUri('/face/models'))
+    .then(() => {
+      const displaySize = { width: 500, height: 375 }
+      faceapi.matchDimensions(container, displaySize)
+      setInterval(async () => {
+        const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceExpressions();
+        const resizedDetections = faceapi.resizeResults(detections, displaySize);
+        // canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+        // faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
+        landmarks = resizedDetections[0]?.landmarks.positions ?? [];
+      }, 50);
+    })
+    .then(() => {
+      init();
+      animate(0);
+    })
+    .catch((e) => {
+      console.error("Something went wrong!");
+      console.error(e);
+    });
+
+
+    function init() {
+      camera = new THREE.Camera();
+      camera.position.z = 1;
+      
+      scene = new THREE.Scene();
+      
+      let geometry = new THREE.PlaneBufferGeometry(2, 2);
+      
+      uniforms = {
+        u_time: { type: "f", value: 1.0 },
+        u_resolution: { type: "v2", value: new THREE.Vector2() },
+        u_mouse: { type: "v2", value: new THREE.Vector2() },
+        u_texture: { type: "t", value: new THREE.VideoTexture(video)},
+        u_leftEye: { type: 'v2', value: new THREE.Vector2() },
+        u_rightEye: { type: 'v2', value: new THREE.Vector2() },
+      };
+      
+      let material = new THREE.ShaderMaterial({
+        uniforms,
+        vertexShader: document.getElementById('vertexShader').textContent,
+        fragmentShader,
+      });
+      
+      let mesh = new THREE.Mesh( geometry, material );
+      scene.add(mesh);
+      
+      renderer = new THREE.WebGLRenderer();
+      renderer.setPixelRatio(window.devicePixelRatio);
+      
+      container.appendChild(renderer.domElement);
+      
+      onWindowResize();
+      window.addEventListener('resize', onWindowResize, false);
+      
+      document.onmousemove = function(e) {
+        const rect = container.getBoundingClientRect();
+        uniforms.u_mouse.value.x = e.clientX - rect.left;
+        uniforms.u_mouse.value.y = e.clientY - rect.top;
+      }
+    }
+    
+    function onWindowResize( event ) {
+      // const w = window.innerWidth, h = window.innerHeight;
+      const w = 500, h = 375;
+      renderer.setSize(w, h);
+      uniforms.u_resolution.value.x = w;
+      uniforms.u_resolution.value.y = h;
+    }
+    
+    function animate(time) {
+      requestAnimationFrame(animate);
+      if ((time - lastTime) < FRAME_PERIOD) {
+        return;
+      }
+      
+      lastTime = time;
+      render(time);
+    }
+    
+    function render(time) {
+      uniforms.u_time.value = time / 1000;
+      uniforms.u_leftEye.value.x = landmarks[46]?.x ?? 0;
+      uniforms.u_leftEye.value.y = landmarks[46]?.y ?? 0;
+      uniforms.u_rightEye.value.x = landmarks[40]?.x ?? 0;
+      uniforms.u_rightEye.value.y = landmarks[40]?.y ?? 0;
+      renderer.render(scene, camera);
+    }
+  </script>
+</body>

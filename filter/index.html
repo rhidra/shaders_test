@@ -1,0 +1,123 @@
+<!DOCTYPE html><html><head>
+  <title>Shaders tests</title>
+  <style>
+    #container {
+      display: flex;
+      justify-content: space-around;
+      min-height: 100vh;
+      padding-top: 5rem;
+    }
+    video {
+      width: 500px;
+      height: 375px;
+    }
+    #canvasElement {
+      width: 500px;
+      height: 375px;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <video autoplay="true" id="videoElement"></video>
+    <div id="canvasElement" width="500" height="375"></div>
+  </div>
+  
+  <script src="/node_modules/three/build/three.min.js"></script>
+  
+  <script id="vertexShader" type="x-shader/x-vertex">
+    void main() { gl_Position = vec4( position, 1.0 ); }
+  </script>
+  
+  <script>
+    const FRAME_PERIOD = 1000 / 30; // 30 FPS
+    
+    const video = document.querySelector('#videoElement');
+    const container = document.querySelector('#canvasElement');
+    
+    let camera, scene, renderer;
+    let uniforms;
+    let fragmentShader;
+    let lastTime = -FRAME_PERIOD;
+    
+    if (!navigator.mediaDevices.getUserMedia) {
+      throw Error('Cannot access webcam !');
+    }
+    
+    fetch('/filter/shaders/kaleidoscope.frag')
+    .then(data => data.text())
+    .then(text => fragmentShader = text)
+    .then(() => navigator.mediaDevices.getUserMedia({ video: true }))
+    .then(stream => video.srcObject = stream)
+    .then(() => {
+      init();
+      animate(0);
+    })
+    .catch((e) => {
+      console.error("Something went wrong!");
+      console.error(e);
+    });
+    
+    function init() {
+      camera = new THREE.Camera();
+      camera.position.z = 1;
+      
+      scene = new THREE.Scene();
+      
+      let geometry = new THREE.PlaneBufferGeometry(2, 2);
+      
+      uniforms = {
+        u_time: { type: "f", value: 1.0 },
+        u_resolution: { type: "v2", value: new THREE.Vector2() },
+        u_mouse: { type: "v2", value: new THREE.Vector2() },
+        u_texture: { type: "t", value: new THREE.VideoTexture(video)}
+      };
+      
+      let material = new THREE.ShaderMaterial({
+        uniforms,
+        vertexShader: document.getElementById('vertexShader').textContent,
+        fragmentShader,
+      });
+      
+      let mesh = new THREE.Mesh( geometry, material );
+      scene.add(mesh);
+      
+      renderer = new THREE.WebGLRenderer();
+      renderer.setPixelRatio(window.devicePixelRatio);
+      
+      container.appendChild(renderer.domElement);
+      
+      onWindowResize();
+      window.addEventListener('resize', onWindowResize, false);
+      
+      document.onmousemove = function(e) {
+        const rect = container.getBoundingClientRect();
+        uniforms.u_mouse.value.x = e.clientX - rect.left;
+        uniforms.u_mouse.value.y = e.clientY - rect.top;
+      }
+    }
+    
+    function onWindowResize( event ) {
+      // const w = window.innerWidth, h = window.innerHeight;
+      const w = 500, h = 375;
+      renderer.setSize(w, h);
+      uniforms.u_resolution.value.x = w;
+      uniforms.u_resolution.value.y = h;
+    }
+    
+    function animate(time) {
+      requestAnimationFrame(animate);
+      if ((time - lastTime) < FRAME_PERIOD) {
+        return;
+      }
+      
+      lastTime = time;
+      render(time);
+    }
+    
+    function render(time) {
+      uniforms.u_time.value = time / 1000;
+      renderer.render(scene, camera);
+    }
+  </script>
+</body>

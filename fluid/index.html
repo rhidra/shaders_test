@@ -1,0 +1,121 @@
+<!DOCTYPE html><html><head><title>Fluid simulation</title><style>
+  body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    margin: 0;
+  }
+  #c { width: 100%; height: 100%; }
+</style></head><body>
+  <canvas id="c"></canvas>
+
+  <script src="/node_modules/twgl.js/dist/4.x/twgl-full.js"></script>
+  <script id="vs" type="x-shader/x-vertex">
+    attribute vec4 position;
+    
+    void main() {
+      gl_Position = position;
+    }
+  </script>
+  <script id="fs1" type="x-shader/x-frag">
+    #ifdef GL_ES
+    precision mediump float;
+    #endif
+    #define PI 3.14159265359
+    uniform vec2 resolution;
+    uniform float time;
+    mat2 rotate(float a) {
+      return mat2(cos(a), -sin(a), sin(a), cos(a));
+    }
+    float box(vec2 st, vec2 size) {
+      st += .5;
+      vec2 uv = step(.5-size/2., st) * step(.5-size/2., 1.-st);
+      return uv.x * uv.y;
+    }
+    vec2 tile(vec2 st, vec2 coef) {
+      return fract(st * coef);
+    }
+    void main() {
+      vec2 st = gl_FragCoord.xy / resolution.xy;
+      vec3 color = vec3(0.0);
+      st = tile(st, vec2(5.));
+      st -= .5;
+      st *= rotate(PI / 4.);
+      color += vec3(box(st, vec2(.707)));
+      gl_FragColor = vec4(color, 1.);
+    }
+  </script>
+  <script id="fs2" type="x-shader/x-frag">
+    precision mediump float;
+    
+    uniform vec2 resolution;
+    uniform float time;
+    uniform sampler2D texture;
+    
+    void main() {
+      vec2 uv = gl_FragCoord.xy / resolution;
+      vec3 color = texture2D(texture, uv).rgb;
+      gl_FragColor = vec4(color+.5, 1.0);
+    }
+  </script>
+  
+  <script>
+    const gl = document.querySelector("#c").getContext("webgl");
+    const programInfo1 = twgl.createProgramInfo(gl, ["vs", "fs1"]);
+    const programInfo2 = twgl.createProgramInfo(gl, ["vs", "fs2"]);
+    twgl.resizeCanvasToDisplaySize(gl.canvas);
+
+    const arrays = {position: [-1, -1, 0, 1, -1, 0, -1, 1, 0, -1, 1, 0, 1, -1, 0, 1, 1, 0]};
+    const bufferInfo = twgl.createBufferInfoFromArrays(gl, arrays);
+
+    const texture1 = twgl.createTexture(gl, {width: gl.canvas.width, height: gl.canvas.height});
+    const framebuffer1 = twgl.createFramebufferInfo(gl, undefined, gl.canvas.width, gl.canvas.height);
+    twgl.bindFramebufferInfo(gl, framebuffer1);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture1, 0);
+
+    const texture2 = twgl.createTexture(gl, {width: gl.canvas.width, height: gl.canvas.height});
+    const framebuffer2 = twgl.createFramebufferInfo(gl, undefined, gl.canvas.width, gl.canvas.height);
+    twgl.bindFramebufferInfo(gl, framebuffer2);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture2, 0);
+
+
+    function render(time) {
+      twgl.resizeCanvasToDisplaySize(gl.canvas);
+      gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+      const uniforms = {
+        time: time * 0.001,
+        resolution: [gl.canvas.width, gl.canvas.height],
+        texture: null,
+      };
+
+      gl.useProgram(programInfo1.program);
+      twgl.setBuffersAndAttributes(gl, programInfo1, bufferInfo);
+      
+      // First program
+      // Draw 0 -> 1
+      twgl.bindFramebufferInfo(gl, framebuffer1);
+      twgl.setUniforms(programInfo1, uniforms);
+      twgl.drawBufferInfo(gl, bufferInfo);
+
+      // Second program
+      // Draw 1 -> 2
+      gl.useProgram(programInfo2.program);
+      twgl.setBuffersAndAttributes(gl, programInfo2, bufferInfo);
+
+      uniforms.texture = texture1;
+      // twgl.bindFramebufferInfo(gl, framebuffer2);
+      // twgl.setUniforms(programInfo2, uniforms);
+      // twgl.drawBufferInfo(gl, bufferInfo);
+
+      // Draw 2 -> canvas
+      // uniforms.texture = texture2;
+      twgl.bindFramebufferInfo(gl, null);
+      twgl.setUniforms(programInfo2, uniforms);
+      twgl.drawBufferInfo(gl, bufferInfo);
+
+      requestAnimationFrame(render);
+    }
+    requestAnimationFrame(render);
+  </script>
+  </body>
